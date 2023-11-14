@@ -1,0 +1,22 @@
+[package]
+name = "anonymizer"
+version = "0.1.0"
+edition = "2021"
+build ="src/build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+kafka = "0.10.0"
+capnp= "0.14"
+time = { version = "0.3.30", features = ["serde","local-offset"] }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0.171", features = ["derive"]}
+clickhouse = "0.11.6"
+
+
+[build-dependencies]
+capnpc = "0.14"
+
+[dev-dependencies]
+clickhouse = { version = "0.11.6", features = ["test-util"] }
