@@ -34,8 +34,29 @@ async fn write_to_batch_safely(inserter: &mut Inserter<LogRow>, row: &LogRow) {
     }
 }
 
-async fn process_messages(inserter: &mut Inserter<LogRow>, consumer: &mut Consumer) {
+async fn safety_commit(client: &Client, rows: &[LogRow]) {
+    loop {
+        let mut inserter: Inserter<LogRow> = client.inserter("http_log").unwrap();
+
+        for row in rows {
+            write_to_batch_safely(&mut inserter, row).await;
+        }
+
+        match inserter.end().await {
+            Ok(_) => return,
+            Err(err) => {
+                println!("error writing to socket {:?}", err);
+                println!("retry in {} secs", TRY_AGAIN_AFTER);
+                thread::sleep(Duration::from_secs(TRY_AGAIN_AFTER));
+            }
+        }
+    }
+}
+
+async fn process_messages(consumer: &mut Consumer, client: &Client) {
+    let mut inserter: Inserter<LogRow> = client.inserter("http_log").unwrap();
     let mut start = Instant::now();
+    let mut safety_container = Vec::new();
 
     loop {
         let message_sets = producer::get_message_sets(consumer);
@@ -48,39 +69,28 @@ async fn process_messages(inserter: &mut Inserter<LogRow>, consumer: &mut Consum
                     .unwrap();
                 let mut row = LogRow::new(reader).unwrap();
                 row.anonymize();
-                write_to_batch_safely(inserter, &row).await;
+
+                safety_container.push(row.clone());
+                write_to_batch_safely(&mut inserter, &row).await;
             }
         }
-
         if start.elapsed() >= Duration::from_secs(SAFE_TIME_CLICKHOUSE) {
-            commit_safely(inserter, consumer).await;
+            if let Err(_) = commit(inserter, consumer).await {
+                safety_commit(client, &safety_container).await;
+            };
             start = Instant::now();
+            safety_container = Vec::new();
+            inserter = client.inserter("http_log").unwrap();
         }
     }
 }
 
-async fn commit_safely(inserter: &mut Inserter<LogRow>, consumer: &mut Consumer) {
-    loop {
-        match inserter.commit().await {
-            Ok(q) => {
-                println!(
-                    "messages sent to clickhouse. Num: {} {}",
-                    q.entries, q.transactions
-                );
-                break;
-            }
-            Err(err) => {
-                println!("could not send messages to clickhouse. {:?}", err,);
-                println!("retry in {} secs", TRY_AGAIN_AFTER);
-                thread::sleep(Duration::from_secs(TRY_AGAIN_AFTER))
-            }
-        }
-    }
+async fn commit(inserter: Inserter<LogRow>, consumer: &mut Consumer) -> Result<(), Box<dyn Error>> {
+    inserter.end().await?;
+    println!("messages written to clickhouse");
     loop {
         match consumer.commit_consumed() {
-            Ok(_) => {
-                break;
-            }
+            Ok(_) => return Ok(()),
             Err(err) => {
                 println!("could not mark messages as consumed in kafka. {:?}", err,);
                 println!("retry in {} secs", TRY_AGAIN_AFTER);
@@ -107,10 +117,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("view created");
 
-    let mut inserter = client.inserter("http_log")?;
     let mut consumer = producer::get_kafka_consumer()?;
 
-    process_messages(&mut inserter, &mut consumer).await;
+    process_messages(&mut consumer, &client).await;
 
     Ok(())
 }

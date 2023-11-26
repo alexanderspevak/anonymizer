@@ -1,6 +1,6 @@
 pub const CREATE_TABLE_HTTP_LOG: &str = r"
             CREATE TABLE IF NOT EXISTS http_log (
-                timestamp UInt64,
+                timestamp DateTime64,
                 resource_id UInt64,
                 bytes_sent UInt64,
                 request_time_milli UInt64,

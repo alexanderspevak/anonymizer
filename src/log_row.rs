@@ -3,7 +3,7 @@ use clickhouse::{error::Result, Row};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 
-#[derive(Debug, Serialize, Deserialize, Row)]
+#[derive(Debug, Serialize, Deserialize, Row, Clone)]
 pub struct LogRow {
     pub timestamp: u64,
     pub resource_id: u64,
