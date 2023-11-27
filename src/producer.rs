@@ -34,7 +34,7 @@ pub fn get_message_sets(consumer: &mut Consumer) -> MessageSets {
                 if m.is_empty() {
                     return m;
                 }
-                println!("messages fetched from kafka");
+                // println!("messages fetched from kafka");
                 return m;
             }
             Err(e) => {
